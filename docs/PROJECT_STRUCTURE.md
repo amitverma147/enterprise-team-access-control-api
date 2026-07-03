@@ -1,6 +1,6 @@
-# Project Structure — File-by-File Guide (Phase 5)
+# Project Structure — File-by-File Guide (Phase 6)
 
-This document is accurate to **this branch only** (`phase-5`) — it lists the
+This document is accurate to **this branch only** (`phase-6`) — it lists the
 files that actually exist right now. Each phase branch updates this file to
 add the new files introduced by that phase. For the eventual full structure,
 see [`ARCHITECTURE_MINDMAP.md`](./ARCHITECTURE_MINDMAP.md) (target design).
@@ -18,6 +18,9 @@ mindmap
       prisma
         prisma.module.ts
         prisma.service.ts
+      redis
+        redis.module.ts
+        redis.service.ts
       guards
         jwt-auth.guard.ts
         permissions.guard.ts
@@ -78,6 +81,11 @@ Everything reads config through `ConfigService.get(...)` instead of touching
 - `prisma.module.ts` — makes `PrismaService` available everywhere via
   `@Global()`.
 
+### `src/common/redis/`
+- `redis.service.ts` — thin `ioredis` wrapper with JSON get/set helpers and
+  prefix-based bulk deletion.
+- `redis.module.ts` — global module, same rationale as Prisma's.
+
 ### `src/common/guards/`
 - `jwt-auth.guard.ts` — validates the access token on every request unless
   the route is `@Public()`. "Secure by default."
@@ -128,10 +136,10 @@ Augments Express's `Request.user` type (via `Express.User`) so
   authorized via `@RequirePermissions('roles:read' | 'roles:manage' | 'roles:assign')`.
 - `dto/` — `CreateRoleDto`, `UpdateRoleDto`.
 
-### `src/modules/permissions/` — Phase 5 (Permission Engine)
+### `src/modules/permissions/` — Phase 5 & 6 (Permission Engine + Caching)
 - `permissions.service.ts` — resolves a membership's status + effective
-  permission set (union across all assigned roles), straight from the
-  database (caching arrives in Phase 6).
+  permission set (union across all assigned roles), with Redis caching and
+  targeted invalidation helpers (`invalidate`, `invalidateForRole`).
 - `decorators/require-permissions.decorator.ts` — declares which
   permissions a route requires; read by `PermissionsGuard`.
 

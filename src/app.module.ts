@@ -6,6 +6,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import configuration from './config/configuration';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { RedisModule } from './common/redis/redis.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { AuthModule } from './modules/auth/auth.module';
@@ -19,9 +20,9 @@ import { PermissionsModule } from './modules/permissions/permissions.module';
  * ----------------------------------------------------------------------------
  * Application composition root.
  *
- * PHASE 5 STATE: Authentication + Organizations + Memberships + Roles +
- * Permission Engine are wired up. Global guards run, in order, on every
- * request:
+ * PHASE 6 STATE: Authentication + Organizations + Memberships + Roles +
+ * Permission Engine (now Redis-cached) are wired up. Global guards run, in
+ * order, on every request:
  *   JwtAuthGuard      -> is there a valid access token? (unless @Public())
  *   PermissionsGuard  -> for routes with :organizationId, is the caller an
  *                        ACTIVE member with the required permission(s)?
@@ -51,6 +52,7 @@ import { PermissionsModule } from './modules/permissions/permissions.module';
       }),
     }),
     PrismaModule,
+    RedisModule,
     AuthModule,
     OrganizationsModule,
     MembershipsModule,

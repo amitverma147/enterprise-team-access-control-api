@@ -13,9 +13,9 @@ Legend: ✅ Implemented on this branch · 🧱 Schema ready, module not built ye
 | 2     | Organizations                | ✅ | Create/list/read/update/soft-delete organizations. Authorization is ownership-only (`organization.ownerId`). |
 | 3     | Memberships                   | ✅ | Org creation now also creates the owner's `ACTIVE` membership (transactional). Owner can list/add(by email)/suspend/remove members. Still ownership-only authorization. |
 | 4     | Roles                         | ✅ | Seeded system roles (OWNER/ADMIN/MEMBER) + full permission catalog. Custom role CRUD and role assignment on memberships. |
-| 5     | Permission Engine             | ✅ | You are here. Global `PermissionsGuard` + `@RequirePermissions(...)`. Organizations/Memberships/Roles fully switched from ownership checks to permission checks. New members get the system MEMBER role by default. |
-| 6     | Permission Caching            | ⏳ | Next branch: `phase-6`. |
-| 7     | Resource Authorization         | ⏳ | |
+| 5     | Permission Engine             | ✅ | Global `PermissionsGuard` + `@RequirePermissions(...)`. Organizations/Memberships/Roles fully switched from ownership checks to permission checks. New members get the system MEMBER role by default. |
+| 6     | Permission Caching            | ✅ | You are here. `PermissionsService.resolveMembership()` is Redis-cached (5 min TTL) with explicit invalidation on every write that could change a membership's effective permissions. |
+| 7     | Resource Authorization         | ⏳ | Next branch: `phase-7`. |
 | 8     | Invitations                    | ⏳ | |
 | 9     | Session Management              | ⏳ | |
 | 10    | Audit Logs                      | ⏳ | |
@@ -29,7 +29,7 @@ Legend: ✅ Implemented on this branch · 🧱 Schema ready, module not built ye
 | 18    | Database Transactions              | 🧱 | Pattern already used inside `AuthService` (refresh rotation, email verification) — expands as more multi-write workflows are added. |
 | 19    | Redis (general)                    | ⏳ | |
 | 20    | API Documentation (Swagger)         | ⏳ | |
-| 21    | Docker                              | 🧱 | `docker-compose.yml` (Postgres + Redis) and a `Dockerfile` for the app exist; Redis isn't used by app code until Phase 6. |
+| 21    | Docker                              | 🧱 | `docker-compose.yml` (Postgres + Redis) and a `Dockerfile` for the app exist; the app itself isn't containerized in `docker-compose.yml` yet (runs on the host against the two containers). |
 | 22    | Logging & Observability             | ⏳ | |
 
 ## A note on the database schema
@@ -43,18 +43,20 @@ read/write** — not the schema itself. Tables like `Organization`, `Role`, or
 `ApiKey` already exist in the database on this branch, but no code uses them
 yet.
 
-## What's next: Phase 6 — Permission Caching
+## What's next: Phase 7 — Resource Authorization
 
-- Add `RedisModule`/`RedisService` (ioredis) back to the app (last used in
-  the schema-design phase, not by any code until now).
-- `PermissionsService.resolveMembership(...)` gains a Redis-backed cache in
-  front of the database lookup (same TTL-based read, 5 minutes), because
-  permission checks now happen on nearly every request.
-- Every mutation that could change a membership's effective permissions
-  (membership status change, role assignment/unassignment, a role's
-  permission set changing) explicitly invalidates the affected cache
-  entries — watch `MembershipsService` and `RolesService` gain
-  `PermissionsService` as a dependency again in that branch.
+The permission engine (Phase 5) plus service-layer `organizationId` scoping
+(present since Phase 2) already provide two independent layers of tenant
+isolation. Phase 7 makes this **defense-in-depth** explicit and tested:
+- A short written/tested audit confirming every mutating service method
+  scopes its queries by `organizationId` (not just by primary key) and that
+  cross-tenant access is blocked even for someone who somehow guesses another
+  org's resource ID.
+- Ownership-style checks that aren't purely permission-based (e.g. "the org
+  owner cannot be removed", already implemented in `MembershipsService`) get
+  called out explicitly as the *third* layer, alongside the guard and the
+  query scoping.
 
 Run `npm run prisma:seed` before trying this branch if you haven't already
-— the permission engine depends on the system roles it creates.
+— the permission engine depends on the system roles it creates. Also run
+`npm run docker:up` to start Redis (used from this branch onward).

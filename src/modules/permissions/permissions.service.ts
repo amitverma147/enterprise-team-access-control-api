@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { RedisService } from '../../common/redis/redis.service';
 
 export interface ResolvedMembership {
   membershipId: string;
@@ -9,38 +10,57 @@ export interface ResolvedMembership {
   permissions: string[];
 }
 
+const CACHE_TTL_SECONDS = 300; // 5 minutes
+const cacheKey = (userId: string, organizationId: string) =>
+  `permissions:${userId}:${organizationId}`;
+
 /**
  * FILE PURPOSE
  * ----------------------------------------------------------------------------
- * The heart of Phase 5 (Permission Engine).
+ * The heart of Phase 5 (Permission Engine) + Phase 6 (Permission Caching).
  *
  * Given a (userId, organizationId) pair, resolves:
- *   1. Whether the user has a membership in that organization, and its status.
+ *   1. Whether the user has an ACTIVE membership in that organization.
  *   2. The union of every permission granted by every role attached to
  *      that membership.
  *
- * WHY THIS BEATS `user.role === 'admin'` CHECKS
+ * PHASE 6 UPDATE — REDIS CACHING
  * ----------------------------------------------------------------------------
- * A membership can hold multiple roles, each contributing different
- * permissions. Adding a new permission or role never requires touching
- * guard/controller code — it's entirely data-driven (Role -> RolePermission
- * -> Permission rows, built up in Phase 4).
+ * Compare `resolveMembership` to the Phase 5 branch: its public signature
+ * hasn't changed at all, but it now checks Redis first and only falls back
+ * to Postgres on a cache miss. Permission checks happen on nearly every
+ * request, but role/permission assignments change rarely — a classic
+ * read-heavy, write-light cache.
  *
- * PHASE 5 STATE: every call hits the database directly. This is correct but
- * not free — permission checks now happen on nearly every request. Phase 6
- * (Permission Caching) adds a Redis layer in front of exactly this method,
- * with explicit invalidation on writes that could change the result. Watch
- * this file gain a cache in the next branch without changing its public
- * shape (`resolveMembership` keeps the same signature).
+ * A 5-minute TTL bounds staleness even if an invalidation is ever missed,
+ * but the real correctness guarantee is **explicit invalidation on every
+ * write that could change the result**:
+ *   - `invalidate(userId, organizationId)` — call after a membership's
+ *     status changes (suspend/reactivate/remove), or after a role is
+ *     assigned/unassigned on that membership.
+ *   - `invalidateForRole(roleId)` — call after a role's own permission set
+ *     changes; drops the cache for every membership holding that role.
+ *
+ * See `MembershipsService` and `RolesService` for where these are called.
  */
 @Injectable()
 export class PermissionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+  ) {}
 
   async resolveMembership(
     userId: string,
     organizationId: string,
   ): Promise<ResolvedMembership | null> {
+    const cached = await this.redis.getJson<ResolvedMembership>(
+      cacheKey(userId, organizationId),
+    );
+    if (cached) {
+      return cached;
+    }
+
     const membership = await this.prisma.membership.findUnique({
       where: { userId_organizationId: { userId, organizationId } },
       include: {
@@ -65,12 +85,38 @@ export class PermissionsService {
       }
     }
 
-    return {
+    const resolved: ResolvedMembership = {
       membershipId: membership.id,
       userId,
       organizationId,
       status: membership.status,
       permissions: [...permissionKeys],
     };
+
+    await this.redis.setJson(
+      cacheKey(userId, organizationId),
+      resolved,
+      CACHE_TTL_SECONDS,
+    );
+
+    return resolved;
+  }
+
+  /** Call after anything that changes a membership's effective permissions. */
+  async invalidate(userId: string, organizationId: string): Promise<void> {
+    await this.redis.del(cacheKey(userId, organizationId));
+  }
+
+  /** Call when a role's permissions change — invalidates everyone holding that role. */
+  async invalidateForRole(roleId: string): Promise<void> {
+    const memberships = await this.prisma.membershipRole.findMany({
+      where: { roleId },
+      include: { membership: true },
+    });
+    await Promise.all(
+      memberships.map((mr) =>
+        this.invalidate(mr.membership.userId, mr.membership.organizationId),
+      ),
+    );
   }
 }

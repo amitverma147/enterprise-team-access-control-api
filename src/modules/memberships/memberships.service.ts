@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { PermissionsService } from '../permissions/permissions.service';
 import { AddMemberDto } from './dto/add-member.dto';
 import { UpdateMembershipDto } from './dto/update-membership.dto';
 
@@ -15,20 +16,20 @@ import { UpdateMembershipDto } from './dto/update-membership.dto';
  * an organization (ACTIVE, SUSPENDED, REMOVED) — independent from what
  * ROLES that membership holds (Phase 4/5, see RolesService).
  *
- * PHASE 5 UPDATE — OWNERSHIP CHECKS REMOVED FROM HERE
+ * PHASE 6 UPDATE — CACHE INVALIDATION
  * ----------------------------------------------------------------------------
- * Compare to Phase 3/4: every method dropped its `requestingUserId` param
- * and the `organizationsService.assertOwner(...)` call. Authorization is now
- * `@RequirePermissions(...)` on the controller (`members:read`,
- * `members:invite`, `members:suspend`, `members:remove`), enforced by the
- * global `PermissionsGuard` before these methods ever run. This is the
- * concrete payoff of Phase 4/5: an ADMIN — not just the literal owner — can
- * now manage members, because ADMIN's seeded permission set includes these
- * `members:*` keys.
+ * `PermissionsService` is injected again (it was removed in Phase 5's
+ * version of this file). Every mutation that could change a membership's
+ * effective permissions now calls `permissionsService.invalidate(...)`,
+ * because a stale Redis entry would otherwise let a suspended/removed
+ * member keep their old permissions until the 5-minute TTL expires.
  */
 @Injectable()
 export class MembershipsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissionsService: PermissionsService,
+  ) {}
 
   async findAll(organizationId: string) {
     return this.prisma.membership.findMany({
@@ -69,8 +70,8 @@ export class MembershipsService {
       where: { organizationId: null, name: 'MEMBER' },
     });
 
-    return this.prisma.$transaction(async (tx) => {
-      const membership = await tx.membership.create({
+    const membership = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.membership.create({
         data: { userId: user.id, organizationId, status: 'ACTIVE' },
         include: {
           user: { select: { id: true, email: true, fullName: true } },
@@ -79,12 +80,17 @@ export class MembershipsService {
 
       if (memberRole) {
         await tx.membershipRole.create({
-          data: { membershipId: membership.id, roleId: memberRole.id },
+          data: { membershipId: created.id, roleId: memberRole.id },
         });
       }
 
-      return membership;
+      return created;
     });
+
+    // No cache entry could exist yet for a brand-new membership, but calling
+    // invalidate() here keeps the pattern consistent and is a no-op cost.
+    await this.permissionsService.invalidate(user.id, organizationId);
+    return membership;
   }
 
   async updateStatus(
@@ -93,10 +99,14 @@ export class MembershipsService {
     dto: UpdateMembershipDto,
   ) {
     const membership = await this.getWithinOrg(organizationId, membershipId);
-    return this.prisma.membership.update({
+
+    const updated = await this.prisma.membership.update({
       where: { id: membership.id },
       data: { status: dto.status },
     });
+
+    await this.permissionsService.invalidate(membership.userId, organizationId);
+    return updated;
   }
 
   async remove(organizationId: string, membershipId: string) {
@@ -116,6 +126,8 @@ export class MembershipsService {
       where: { id: membership.id },
       data: { status: 'REMOVED' },
     });
+
+    await this.permissionsService.invalidate(membership.userId, organizationId);
   }
 
   private async getWithinOrg(organizationId: string, membershipId: string) {

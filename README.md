@@ -5,7 +5,7 @@ and secure API design — built **phase by phase**, each phase on its own git
 branch (`phase-1`, `phase-2`, ... `phase-22`), so you can check out any
 branch and run a fully working, testable slice of the system.
 
-> **You are on: `phase-5` — Permission Engine.**
+> **You are on: `phase-6` — Permission Caching.**
 > New here? Start with [`docs/SYSTEM_DESIGN.md`](./docs/SYSTEM_DESIGN.md) for
 > the target architecture, [`docs/ARCHITECTURE_MINDMAP.md`](./docs/ARCHITECTURE_MINDMAP.md)
 > for a visual map, and [`docs/ROADMAP.md`](./docs/ROADMAP.md) for exactly
@@ -15,11 +15,12 @@ branch and run a fully working, testable slice of the system.
 
 - **NestJS** (TypeScript) — application framework
 - **PostgreSQL** + **Prisma ORM** — system of record
+- **Redis** — permission caching
 - **JWT** (access) + rotating opaque tokens (refresh) — authentication
 - **Argon2id** — password hashing
-- **Docker Compose** — local Postgres (+ Redis, added from Phase 6)
+- **Docker Compose** — local Postgres + Redis
 
-## What's built on this branch (Phases 1–5)
+## What's built on this branch (Phases 1–6)
 
 **Phase 1 — Authentication**
 - `POST /auth/register` — create an account (Argon2id password hashing),
@@ -83,7 +84,16 @@ branch and run a fully working, testable slice of the system.
   cannot create custom roles or delete the org (`roles:manage` /
   `org:delete` are ADMIN/OWNER-only).
 
-See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's coming in `phase-6`
+**Phase 6 — Permission Caching**
+- `PermissionsService.resolveMembership(...)` now checks Redis before
+  Postgres, caching the resolved membership + permission set for 5 minutes.
+- Every write that could change a membership's effective permissions
+  (status change, role assignment/unassignment, a role's permission set
+  changing) explicitly invalidates the relevant cache entries — try
+  suspending a member and immediately re-requesting as them: you get an
+  instant 403, not a stale cached 200.
+
+See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's coming in `phase-7`
 onward — each subsequent branch adds one phase without breaking earlier ones.
 
 ## Getting started
@@ -104,7 +114,7 @@ cp .env.example .env
 
 ### 4. Start infrastructure
 ```bash
-npm run docker:up      # starts Postgres (5432)
+npm run docker:up      # starts Postgres (5432) and Redis (6380 on host)
 ```
 
 ### 5. Set up the database
@@ -134,7 +144,7 @@ curl -X POST http://localhost:3000/api/v1/auth/register \
 | `npm run build`          | Compile TypeScript to `dist/`                        |
 | `npm run test`           | Unit tests                                           |
 | `npm run test:e2e`       | End-to-end tests                                     |
-| `npm run docker:up`      | Start Postgres (+ Redis from Phase 6) via Docker      |
+| `npm run docker:up`      | Start Postgres + Redis via Docker                     |
 | `npm run docker:down`    | Stop Docker Compose services                         |
 | `npm run prisma:migrate` | Create/apply a Prisma migration                      |
 | `npm run prisma:generate`| Regenerate the Prisma client                         |
@@ -162,8 +172,8 @@ belongs to.
 | `phase-2` | Organizations |
 | `phase-3` | Memberships |
 | `phase-4` | Roles |
-| `phase-5` (this branch) | Permission Engine |
-| `phase-6` | Permission Caching (Redis) |
+| `phase-5` | Permission Engine |
+| `phase-6` (this branch) | Permission Caching (Redis) |
 | `phase-7` → `phase-22` | See [`docs/ROADMAP.md`](./docs/ROADMAP.md) |
 
 ## Project layout
@@ -179,7 +189,7 @@ src/
     organizations/    # Phase 2
     memberships/      # Phase 3
     roles/            # Phase 4
-    permissions/      # Phase 5
+    permissions/      # Phase 5 & 6
 docs/                 # architecture, database, roadmap, mind maps
-docker-compose.yml    # local Postgres (+ Redis from Phase 6)
+docker-compose.yml    # local Postgres + Redis
 ```
