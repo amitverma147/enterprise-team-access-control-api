@@ -5,7 +5,7 @@ and secure API design — built **phase by phase**, each phase on its own git
 branch (`phase-1`, `phase-2`, ... `phase-22`), so you can check out any
 branch and run a fully working, testable slice of the system.
 
-> **You are on: `phase-2` — Organizations.**
+> **You are on: `phase-3` — Memberships.**
 > New here? Start with [`docs/SYSTEM_DESIGN.md`](./docs/SYSTEM_DESIGN.md) for
 > the target architecture, [`docs/ARCHITECTURE_MINDMAP.md`](./docs/ARCHITECTURE_MINDMAP.md)
 > for a visual map, and [`docs/ROADMAP.md`](./docs/ROADMAP.md) for exactly
@@ -19,7 +19,7 @@ branch and run a fully working, testable slice of the system.
 - **Argon2id** — password hashing
 - **Docker Compose** — local Postgres (+ Redis, added from Phase 6)
 
-## What's built on this branch (Phases 1–2)
+## What's built on this branch (Phases 1–3)
 
 **Phase 1 — Authentication**
 - `POST /auth/register` — create an account (Argon2id password hashing),
@@ -41,10 +41,21 @@ branch and run a fully working, testable slice of the system.
 - `GET/PATCH/DELETE /organizations/:organizationId` — read/update/soft-delete,
   restricted to the organization's owner (`ownerId`).
 - Authorization is **intentionally ownership-only** at this phase — there's
-  no Membership/Role system yet (Phases 3–5 add that, and Phase 5 replaces
+  no Role/Permission system yet (Phases 4–5 add that, and Phase 5 replaces
   these checks with a real permission engine).
 
-See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's coming in `phase-3`
+**Phase 3 — Memberships**
+- Creating an organization now also creates the owner's `ACTIVE` membership,
+  in the same database transaction.
+- `GET /organizations/:organizationId/members` — list members (owner only).
+- `POST /organizations/:organizationId/members` — add an *existing* user to
+  the org by email (owner only). Invite-by-token for people without an
+  account yet is Phase 8.
+- `PATCH .../members/:membershipId` — suspend/reactivate a member (owner only).
+- `DELETE .../members/:membershipId` — remove a member (owner only; the
+  owner cannot remove themself).
+
+See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's coming in `phase-4`
 onward — each subsequent branch adds one phase without breaking earlier ones.
 
 ## Getting started
@@ -119,8 +130,8 @@ belongs to.
 | Branch | Adds |
 |---|---|
 | `phase-1` | Authentication |
-| `phase-2` (this branch) | Organizations |
-| `phase-3` | Memberships |
+| `phase-2` | Organizations |
+| `phase-3` (this branch) | Memberships |
 | `phase-4` | Roles |
 | `phase-5` | Permission Engine |
 | `phase-6` | Permission Caching (Redis) |
@@ -137,6 +148,7 @@ src/
   modules/
     auth/             # Phase 1
     organizations/    # Phase 2
+    memberships/      # Phase 3
 docs/                 # architecture, database, roadmap, mind maps
 docker-compose.yml    # local Postgres (+ Redis from Phase 6)
 ```

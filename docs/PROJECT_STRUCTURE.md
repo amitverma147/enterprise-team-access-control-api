@@ -1,6 +1,6 @@
-# Project Structure — File-by-File Guide (Phase 2)
+# Project Structure — File-by-File Guide (Phase 3)
 
-This document is accurate to **this branch only** (`phase-2`) — it lists the
+This document is accurate to **this branch only** (`phase-3`) — it lists the
 files that actually exist right now. Each phase branch updates this file to
 add the new files introduced by that phase. For the eventual full structure,
 see [`ARCHITECTURE_MINDMAP.md`](./ARCHITECTURE_MINDMAP.md) (target design).
@@ -37,6 +37,11 @@ mindmap
         organizations.module.ts
         organizations.controller.ts
         organizations.service.ts
+        dto
+      memberships
+        memberships.module.ts
+        memberships.controller.ts
+        memberships.service.ts
         dto
 ```
 
@@ -94,10 +99,16 @@ Augments Express's `Request.user` type (via `Express.User`) so
   `JwtAuthGuard`.
 - `dto/` — `class-validator`-annotated request bodies.
 
+### `src/modules/memberships/` — Phase 3 (Memberships)
+- `memberships.service.ts` — list/add/suspend/remove members; every method
+  reuses `OrganizationsService.assertOwner(...)` for its authorization check.
+- `memberships.controller.ts` — nested under `/organizations/:organizationId/members`.
+- `dto/` — `AddMemberDto` (add an existing user by email), `UpdateMembershipDto`.
+
 ### `prisma/schema.prisma`
 The full data model for all 22 phases (see [`DATABASE.md`](./DATABASE.md)) —
-only `User`, `RefreshToken`, `EmailVerificationToken`, and `Organization` are
-used by application code on this branch.
+only `User`, `RefreshToken`, `EmailVerificationToken`, `Organization`, and
+`Membership` are used by application code on this branch.
 
 ---
 

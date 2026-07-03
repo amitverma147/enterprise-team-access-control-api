@@ -14,18 +14,20 @@ import { UpdateOrganizationDto } from './dto/update-organization.dto';
  * Implements Phase 2 (Organizations): multi-tenant creation, ownership, and
  * soft-delete.
  *
- * PHASE 2 STATE — INTENTIONALLY SIMPLE AUTHORIZATION
+ * PHASE 3 UPDATE
  * ----------------------------------------------------------------------------
- * There is no Membership or Role system yet (that's Phases 3–5), so
- * authorization here is the simplest thing that could possibly work: **only
- * the organization's `ownerId` may read, update, or delete it.** Every
- * mutating method takes the requesting user's id and checks it directly
- * against `organization.ownerId`.
+ * `create()` now also creates an ACTIVE `Membership` row for the owner, in
+ * the same database transaction as the `Organization` row itself (Phase 18
+ * pattern: both writes succeed or neither does — you should never end up
+ * with an organization that has no membership at all). See
+ * `MembershipsService` for the rest of Phase 3, which reuses `assertOwner()`
+ * below for its own ownership checks.
  *
- * This is a real, working tenant boundary — it's just not yet
- * multi-person. Phase 3 introduces `Membership` so more than one user can
- * belong to an organization, and Phase 5 replaces these ownership checks
- * with a proper permission engine. Watch this file evolve across branches.
+ * AUTHORIZATION STILL OWNERSHIP-ONLY
+ * ----------------------------------------------------------------------------
+ * Even though a `Membership` now exists, read/update/delete authorization
+ * here still checks `organization.ownerId` directly rather than membership
+ * status/roles — there's no Role or Permission system yet (Phases 4–5).
  *
  * TENANT ISOLATION
  * ----------------------------------------------------------------------------
@@ -49,8 +51,20 @@ export class OrganizationsService {
       );
     }
 
-    return this.prisma.organization.create({
-      data: { name: dto.name, slug, ownerId: userId },
+    return this.prisma.$transaction(async (tx) => {
+      const organization = await tx.organization.create({
+        data: { name: dto.name, slug, ownerId: userId },
+      });
+
+      await tx.membership.create({
+        data: {
+          userId,
+          organizationId: organization.id,
+          status: 'ACTIVE',
+        },
+      });
+
+      return organization;
     });
   }
 
@@ -63,11 +77,7 @@ export class OrganizationsService {
   }
 
   async findOne(organizationId: string, requestingUserId: string) {
-    const organization = await this.getOwnedOrThrow(
-      organizationId,
-      requestingUserId,
-    );
-    return organization;
+    return this.assertOwner(organizationId, requestingUserId);
   }
 
   async update(
@@ -75,7 +85,7 @@ export class OrganizationsService {
     requestingUserId: string,
     dto: UpdateOrganizationDto,
   ) {
-    await this.getOwnedOrThrow(organizationId, requestingUserId);
+    await this.assertOwner(organizationId, requestingUserId);
     return this.prisma.organization.update({
       where: { id: organizationId },
       data: { name: dto.name },
@@ -84,17 +94,19 @@ export class OrganizationsService {
 
   /** Soft delete: keeps the row (and its future audit trail) but hides it from normal use. */
   async softDelete(organizationId: string, requestingUserId: string) {
-    await this.getOwnedOrThrow(organizationId, requestingUserId);
+    await this.assertOwner(organizationId, requestingUserId);
     await this.prisma.organization.update({
       where: { id: organizationId },
       data: { deletedAt: new Date() },
     });
   }
 
-  private async getOwnedOrThrow(
-    organizationId: string,
-    requestingUserId: string,
-  ) {
+  /**
+   * Fetches a non-deleted organization and throws unless `requestingUserId`
+   * is its owner. Exposed (not private) so `MembershipsService` can reuse the
+   * exact same rule instead of duplicating it.
+   */
+  async assertOwner(organizationId: string, requestingUserId: string) {
     const organization = await this.prisma.organization.findFirst({
       where: { id: organizationId, deletedAt: null },
     });
@@ -102,9 +114,6 @@ export class OrganizationsService {
       throw new NotFoundException('Organization not found');
     }
     if (organization.ownerId !== requestingUserId) {
-      // Deliberately the same 404 a non-existent org would produce in a
-      // richer system, but at this phase we're explicit for learning
-      // purposes: a 403 makes the ownership rule visible while testing.
       throw new ForbiddenException('You do not own this organization');
     }
     return organization;

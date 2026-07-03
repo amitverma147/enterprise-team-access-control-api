@@ -10,9 +10,9 @@ Legend: ✅ Implemented on this branch · 🧱 Schema ready, module not built ye
 | Phase | Name                        | Status | Notes |
 |------:|-----------------------------|:------:|-------|
 | 1     | Authentication              | ✅ | Register, login, JWT access tokens, rotating refresh tokens with theft detection, account lockout, email verification (stubbed email delivery). |
-| 2     | Organizations                | ✅ | You are here. Create/list/read/update/soft-delete organizations. Authorization is ownership-only (`organization.ownerId`) — no Membership/Role system yet. |
-| 3     | Memberships                   | ⏳ | Next branch: `phase-3`. |
-| 4     | Roles                         | ⏳ | |
+| 2     | Organizations                | ✅ | Create/list/read/update/soft-delete organizations. Authorization is ownership-only (`organization.ownerId`). |
+| 3     | Memberships                   | ✅ | You are here. Org creation now also creates the owner's `ACTIVE` membership (transactional). Owner can list/add(by email)/suspend/remove members. Still ownership-only authorization. |
+| 4     | Roles                         | ⏳ | Next branch: `phase-4`. |
 | 5     | Permission Engine             | ⏳ | |
 | 6     | Permission Caching            | ⏳ | |
 | 7     | Resource Authorization         | ⏳ | |
@@ -43,14 +43,14 @@ read/write** — not the schema itself. Tables like `Organization`, `Role`, or
 `ApiKey` already exist in the database on this branch, but no code uses them
 yet.
 
-## What's next: Phase 3 — Memberships
+## What's next: Phase 4 — Roles
 
-- `Membership` model already exists in the schema (User <-> Organization join
-  with a status lifecycle: `INVITED`, `ACTIVE`, `SUSPENDED`, `REMOVED`).
-- Organization creation starts also creating an `ACTIVE` membership row for
-  the owner (wrapped in a transaction with the org creation itself).
-- A simple "add existing user to my org by email" endpoint is added so more
-  than one person can belong to an organization — full invitation-by-email
-  tokens are Phase 8.
-- Authorization remains ownership-based for now (only the org owner can
-  add/remove members) — the real permission engine arrives in Phase 5.
+- `Role`, `Permission`, `RolePermission`, and `MembershipRole` models already
+  exist in the schema.
+- Seed script (`prisma/seed.ts`) introduces the permission catalog and
+  built-in system roles (OWNER, ADMIN, MEMBER).
+- `RolesModule` adds CRUD for organization-specific custom roles, and
+  endpoints to assign/unassign a role on a membership.
+- Authorization for role management is **still ownership-only** (only the
+  org owner can manage roles) — Phase 5 is what actually makes roles affect
+  *authorization decisions* elsewhere in the API.

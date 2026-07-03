@@ -9,14 +9,15 @@ import { PrismaModule } from './common/prisma/prisma.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { AuthModule } from './modules/auth/auth.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
+import { MembershipsModule } from './modules/memberships/memberships.module';
 
 /**
  * FILE PURPOSE
  * ----------------------------------------------------------------------------
  * Application composition root.
  *
- * PHASE 2 STATE: Authentication + Organizations are wired up. Global guards
- * run, in order, on every request:
+ * PHASE 3 STATE: Authentication + Organizations + Memberships are wired up.
+ * Global guards run, in order, on every request:
  *   JwtAuthGuard    -> is there a valid access token? (unless @Public())
  *   ThrottlerGuard  -> has this client exceeded the rate limit?
  *
@@ -46,6 +47,7 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
     PrismaModule,
     AuthModule,
     OrganizationsModule,
+    MembershipsModule,
   ],
   controllers: [AppController],
   providers: [
