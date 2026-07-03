@@ -5,7 +5,7 @@ and secure API design — built **phase by phase**, each phase on its own git
 branch (`phase-1`, `phase-2`, ... `phase-22`), so you can check out any
 branch and run a fully working, testable slice of the system.
 
-> **You are on: `phase-6` — Permission Caching.**
+> **You are on: `phase-7` — Resource Authorization.**
 > New here? Start with [`docs/SYSTEM_DESIGN.md`](./docs/SYSTEM_DESIGN.md) for
 > the target architecture, [`docs/ARCHITECTURE_MINDMAP.md`](./docs/ARCHITECTURE_MINDMAP.md)
 > for a visual map, and [`docs/ROADMAP.md`](./docs/ROADMAP.md) for exactly
@@ -20,7 +20,7 @@ branch and run a fully working, testable slice of the system.
 - **Argon2id** — password hashing
 - **Docker Compose** — local Postgres + Redis
 
-## What's built on this branch (Phases 1–6)
+## What's built on this branch (Phases 1–7)
 
 **Phase 1 — Authentication**
 - `POST /auth/register` — create an account (Argon2id password hashing),
@@ -93,7 +93,16 @@ branch and run a fully working, testable slice of the system.
   suspending a member and immediately re-requesting as them: you get an
   instant 403, not a stale cached 200.
 
-See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's coming in `phase-7`
+**Phase 7 — Resource Authorization**
+- Ownership rules that a generic permission can't express: the organization
+  owner cannot be suspended or removed, and their `OWNER` role assignment
+  cannot be stripped — even by an ADMIN holding `members:suspend` /
+  `roles:assign`.
+- New automated e2e suite, `test/tenant-isolation.e2e-spec.ts`: cross-tenant
+  403s, a MEMBER's restricted access, and both ownership protections above,
+  run against the real database (not mocks). Run it with `npm run test:e2e`.
+
+See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's coming in `phase-8`
 onward — each subsequent branch adds one phase without breaking earlier ones.
 
 ## Getting started
@@ -143,7 +152,7 @@ curl -X POST http://localhost:3000/api/v1/auth/register \
 | `npm run start:dev`      | Run the API in watch mode                            |
 | `npm run build`          | Compile TypeScript to `dist/`                        |
 | `npm run test`           | Unit tests                                           |
-| `npm run test:e2e`       | End-to-end tests                                     |
+| `npm run test:e2e`       | End-to-end tests (needs Postgres+Redis running and migrated/seeded) |
 | `npm run docker:up`      | Start Postgres + Redis via Docker                     |
 | `npm run docker:down`    | Stop Docker Compose services                         |
 | `npm run prisma:migrate` | Create/apply a Prisma migration                      |
@@ -173,8 +182,9 @@ belongs to.
 | `phase-3` | Memberships |
 | `phase-4` | Roles |
 | `phase-5` | Permission Engine |
-| `phase-6` (this branch) | Permission Caching (Redis) |
-| `phase-7` → `phase-22` | See [`docs/ROADMAP.md`](./docs/ROADMAP.md) |
+| `phase-6` | Permission Caching (Redis) |
+| `phase-7` (this branch) | Resource Authorization |
+| `phase-8` → `phase-22` | See [`docs/ROADMAP.md`](./docs/ROADMAP.md) |
 
 ## Project layout
 

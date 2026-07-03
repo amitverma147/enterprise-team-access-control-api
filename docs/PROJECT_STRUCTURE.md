@@ -1,6 +1,6 @@
-# Project Structure — File-by-File Guide (Phase 6)
+# Project Structure — File-by-File Guide (Phase 7)
 
-This document is accurate to **this branch only** (`phase-6`) — it lists the
+This document is accurate to **this branch only** (`phase-7`) — it lists the
 files that actually exist right now. Each phase branch updates this file to
 add the new files introduced by that phase. For the eventual full structure,
 see [`ARCHITECTURE_MINDMAP.md`](./ARCHITECTURE_MINDMAP.md) (target design).
@@ -146,6 +146,12 @@ Augments Express's `Request.user` type (via `Express.User`) so
 ### `prisma/seed.ts`
 Seeds the permission catalog and the three built-in system roles (OWNER,
 ADMIN, MEMBER). Run with `npm run prisma:seed`.
+
+### `test/tenant-isolation.e2e-spec.ts` — Phase 7 (Resource Authorization)
+Automated coverage, against the real database, for: cross-tenant 403s, a
+MEMBER's restricted access, and the two ownership-protection rules added
+this phase (owner can't be suspended/removed; owner's OWNER role can't be
+unassigned).
 
 ### `prisma/schema.prisma`
 The full data model for all 22 phases (see [`DATABASE.md`](./DATABASE.md)).

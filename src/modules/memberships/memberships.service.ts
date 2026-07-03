@@ -23,6 +23,17 @@ import { UpdateMembershipDto } from './dto/update-membership.dto';
  * effective permissions now calls `permissionsService.invalidate(...)`,
  * because a stale Redis entry would otherwise let a suspended/removed
  * member keep their old permissions until the 5-minute TTL expires.
+ *
+ * PHASE 7 UPDATE — OWNERSHIP PROTECTION (RESOURCE AUTHORIZATION)
+ * ----------------------------------------------------------------------------
+ * `updateStatus` now also refuses to SUSPEND the organization's owner (it
+ * already refused to REMOVE them). Neither rule is expressible as a
+ * `Permission` — even an ADMIN with `members:suspend` shouldn't be able to
+ * suspend the owner. This is exactly what "resource authorization" /
+ * "ownership checks" mean beyond a generic permission engine: some rules are
+ * about the *specific resource* (this membership belongs to *the owner*),
+ * not just "does the caller have permission X". See `test/tenant-isolation.e2e-spec.ts`
+ * for automated coverage of this and the cross-tenant isolation guarantees.
  */
 @Injectable()
 export class MembershipsService {
@@ -99,6 +110,18 @@ export class MembershipsService {
     dto: UpdateMembershipDto,
   ) {
     const membership = await this.getWithinOrg(organizationId, membershipId);
+
+    if (dto.status === 'SUSPENDED') {
+      const organization = await this.prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { ownerId: true },
+      });
+      if (organization?.ownerId === membership.userId) {
+        throw new BadRequestException(
+          'The organization owner cannot be suspended',
+        );
+      }
+    }
 
     const updated = await this.prisma.membership.update({
       where: { id: membership.id },

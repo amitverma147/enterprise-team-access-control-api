@@ -14,9 +14,9 @@ Legend: ✅ Implemented on this branch · 🧱 Schema ready, module not built ye
 | 3     | Memberships                   | ✅ | Org creation now also creates the owner's `ACTIVE` membership (transactional). Owner can list/add(by email)/suspend/remove members. Still ownership-only authorization. |
 | 4     | Roles                         | ✅ | Seeded system roles (OWNER/ADMIN/MEMBER) + full permission catalog. Custom role CRUD and role assignment on memberships. |
 | 5     | Permission Engine             | ✅ | Global `PermissionsGuard` + `@RequirePermissions(...)`. Organizations/Memberships/Roles fully switched from ownership checks to permission checks. New members get the system MEMBER role by default. |
-| 6     | Permission Caching            | ✅ | You are here. `PermissionsService.resolveMembership()` is Redis-cached (5 min TTL) with explicit invalidation on every write that could change a membership's effective permissions. |
-| 7     | Resource Authorization         | ⏳ | Next branch: `phase-7`. |
-| 8     | Invitations                    | ⏳ | |
+| 6     | Permission Caching            | ✅ | `PermissionsService.resolveMembership()` is Redis-cached (5 min TTL) with explicit invalidation on every write that could change a membership's effective permissions. |
+| 7     | Resource Authorization         | ✅ | You are here. Ownership rules that a generic permission can't express: the org owner cannot be suspended/removed, and their OWNER role assignment cannot be stripped — even by an ADMIN with the matching permission. Automated e2e tests (`test/tenant-isolation.e2e-spec.ts`) cover cross-tenant isolation + these rules. |
+| 8     | Invitations                    | ⏳ | Next branch: `phase-8`. |
 | 9     | Session Management              | ⏳ | |
 | 10    | Audit Logs                      | ⏳ | |
 | 11    | Security                        | 🧱 | Baseline only: `helmet()`, global `ValidationPipe`, a basic global rate limit. Full phase adds per-route limits and more hardening. |
@@ -43,20 +43,19 @@ read/write** — not the schema itself. Tables like `Organization`, `Role`, or
 `ApiKey` already exist in the database on this branch, but no code uses them
 yet.
 
-## What's next: Phase 7 — Resource Authorization
+## What's next: Phase 8 — Invitations
 
-The permission engine (Phase 5) plus service-layer `organizationId` scoping
-(present since Phase 2) already provide two independent layers of tenant
-isolation. Phase 7 makes this **defense-in-depth** explicit and tested:
-- A short written/tested audit confirming every mutating service method
-  scopes its queries by `organizationId` (not just by primary key) and that
-  cross-tenant access is blocked even for someone who somehow guesses another
-  org's resource ID.
-- Ownership-style checks that aren't purely permission-based (e.g. "the org
-  owner cannot be removed", already implemented in `MembershipsService`) get
-  called out explicitly as the *third* layer, alongside the guard and the
-  query scoping.
+- `Invitation` model already exists in the schema (organizationId, email,
+  roleId, hashed one-time token, status, expiry).
+- `InvitationsModule` adds `POST /organizations/:organizationId/invitations`
+  (create + email a one-time token, `members:invite` permission) and
+  `POST /invitations/accept` (public endpoint, consumes the token and
+  creates a Membership + assigns the invited role — works even for people
+  who don't have an account yet, unlike Phase 3's `addMember`).
+- Reuses `HashingService.generateOpaqueToken()` / `hashOpaqueToken()` from
+  Phase 1 — the exact same token pattern as refresh tokens and email
+  verification, just a different table.
 
 Run `npm run prisma:seed` before trying this branch if you haven't already
 — the permission engine depends on the system roles it creates. Also run
-`npm run docker:up` to start Redis (used from this branch onward).
+`npm run docker:up` to start Postgres + Redis.

@@ -23,6 +23,15 @@ import { UpdateRoleDto } from './dto/update-role.dto';
  * all change what a membership is allowed to do — each now calls
  * `invalidateForRole(...)` or `invalidate(...)` so `PermissionsGuard` never
  * serves a stale, cached permission set after one of these writes.
+ *
+ * PHASE 7 UPDATE — OWNERSHIP PROTECTION (RESOURCE AUTHORIZATION)
+ * ----------------------------------------------------------------------------
+ * `removeFromMembership` now refuses to strip the OWNER role from the
+ * organization's actual owner, even if the caller holds `roles:assign`
+ * (e.g. an ADMIN). Like the equivalent rule in `MembershipsService`, this
+ * isn't expressible as a `Permission` — it's a rule about *this specific
+ * resource* (only the true owner's membership is protected), which is what
+ * "resource authorization" adds on top of the permission engine.
  */
 @Injectable()
 export class RolesService {
@@ -123,6 +132,20 @@ export class RolesService {
       organizationId,
       membershipId,
     );
+
+    const [organization, role] = await Promise.all([
+      this.prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { ownerId: true },
+      }),
+      this.prisma.role.findUnique({ where: { id: roleId } }),
+    ]);
+    if (organization?.ownerId === membership.userId && role?.name === 'OWNER') {
+      throw new BadRequestException(
+        "The organization owner's OWNER role cannot be removed",
+      );
+    }
+
     await this.prisma.membershipRole.deleteMany({
       where: { membershipId, roleId },
     });
