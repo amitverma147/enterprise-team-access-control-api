@@ -1,0 +1,30 @@
+node_modules
+# Scratch space used only during incremental phase-by-phase development; never committed.
+/.phase-staging
+# Keep environment variables out of version control
+.env
+
+/generated/prisma
+
+# compiled output
+/dist
+/build
+
+# Logs
+logs
+*.log
+
+# OS
+.DS_Store
+
+# Tests
+/coverage
+/.nyc_output
+
+# IDEs and editors
+/.idea
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json

@@ -1,0 +1,397 @@
+// ============================================================================
+// Enterprise Team Access Control API — Prisma Schema
+// ----------------------------------------------------------------------------
+// This schema is intentionally designed UP FRONT to cover all 22 phases of
+// the project (see /docs/SYSTEM_DESIGN.md). We build the API incrementally,
+// but the data model is designed as a whole so relationships stay consistent
+// as new modules are added.
+//
+// Read /docs/DATABASE.md for an entity-relationship explanation and a
+// mind-map of how these tables relate to each other.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum UserStatus {
+  ACTIVE
+  LOCKED // temporarily locked after too many failed login attempts
+  DISABLED // permanently disabled by an admin
+}
+
+enum MembershipStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  REMOVED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+// ============================================================================
+// PHASE 1 — AUTHENTICATION
+// ============================================================================
+
+/// A person who can log in. Users are global — an email exists once across
+/// the whole platform — but a user's access to *data* is always scoped
+/// through a Membership to an Organization (see Phase 2 & 3).
+model User {
+  id                 String     @id @default(uuid())
+  email              String     @unique
+  passwordHash       String
+  fullName           String?
+  status             UserStatus @default(ACTIVE)
+  emailVerified      Boolean    @default(false)
+  emailVerifiedAt    DateTime?
+
+  // Account lockout (Phase 1)
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  // Relations
+  ownedOrganizations   Organization[]        @relation("OrganizationOwner")
+  memberships          Membership[]
+  refreshTokens        RefreshToken[]
+  emailVerifications   EmailVerificationToken[]
+  passwordResets       PasswordResetToken[]
+  passwordHistory      PasswordHistoryEntry[]
+  sessions             Session[]
+  auditLogsAsActor     AuditLog[]            @relation("AuditActor")
+  sentInvitations      Invitation[]          @relation("InvitationInviter")
+  createdApiKeys       ApiKey[]              @relation("ApiKeyCreator")
+
+  @@index([email])
+  @@map("users")
+}
+
+/// A rotated refresh token family. Every time a refresh token is used, it is
+/// revoked and replaced — if a revoked token is ever reused, the whole
+/// family is invalidated (this detects token theft).
+model RefreshToken {
+  id               String    @id @default(uuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tokenHash        String    @unique // never store raw tokens
+  family           String // groups a rotation chain together
+  replacedByTokenId String?  @unique
+
+  userAgent        String?
+  ipAddress        String?
+
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+
+  session          Session?
+
+  @@index([userId])
+  @@index([family])
+  @@map("refresh_tokens")
+}
+
+/// One-time token emailed to a user to verify ownership of their email
+/// address after registration.
+model EmailVerificationToken {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@map("email_verification_tokens")
+}
+
+// ============================================================================
+// PHASE 13 — PASSWORD RESET
+// ============================================================================
+
+model PasswordResetToken {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+/// Stores previous password hashes so a user cannot reuse a recent password.
+model PasswordHistoryEntry {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@map("password_history")
+}
+
+// ============================================================================
+// PHASE 2 — ORGANIZATIONS (multi-tenancy)
+// ============================================================================
+
+/// A tenant. All business data (memberships, roles, invitations, API keys,
+/// audit logs) is scoped to an Organization. Soft-deleted orgs are kept for
+/// audit/compliance but excluded from normal queries.
+model Organization {
+  id        String    @id @default(uuid())
+  name      String
+  slug      String    @unique
+
+  ownerId   String
+  owner     User      @relation("OrganizationOwner", fields: [ownerId], references: [id])
+
+  deletedAt DateTime? // soft delete
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  memberships Membership[]
+  roles       Role[]
+  invitations Invitation[]
+  auditLogs   AuditLog[]
+  apiKeys     ApiKey[]
+
+  @@index([ownerId])
+  @@map("organizations")
+}
+
+// ============================================================================
+// PHASE 3 — MEMBERSHIPS
+// ============================================================================
+
+/// The join between a User and an Organization. This is the anchor point for
+/// authorization: every permission check resolves "does this user's
+/// membership in this org grant this permission?"
+model Membership {
+  id             String           @id @default(uuid())
+
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  status         MembershipStatus @default(ACTIVE)
+
+  joinedAt       DateTime         @default(now())
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  roles          MembershipRole[]
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@map("memberships")
+}
+
+// ============================================================================
+// PHASE 4 & 5 — ROLES & PERMISSION ENGINE
+// ============================================================================
+
+/// A role groups permissions. `organizationId = null` marks a built-in
+/// system role (e.g. OWNER, ADMIN, MEMBER) available to every tenant.
+/// Organizations may additionally define custom roles scoped to themselves.
+model Role {
+  id             String       @id @default(uuid())
+  name           String
+  isSystem       Boolean      @default(false)
+
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  permissions    RolePermission[]
+  memberships    MembershipRole[]
+  invitations    Invitation[]
+
+  @@unique([organizationId, name])
+  @@map("roles")
+}
+
+/// The fixed catalog of permissions the whole system understands, e.g.
+/// "org:members:invite", "org:roles:manage", "billing:read".
+model Permission {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+/// Join table: which permissions a role grants.
+model RolePermission {
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+/// Join table: which roles a membership holds (a member may have >1 role).
+model MembershipRole {
+  membershipId String
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  assignedAt   DateTime   @default(now())
+
+  @@id([membershipId, roleId])
+  @@map("membership_roles")
+}
+
+// ============================================================================
+// PHASE 8 — INVITATIONS
+// ============================================================================
+
+model Invitation {
+  id             String           @id @default(uuid())
+
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  email          String
+  roleId         String
+  role           Role             @relation(fields: [roleId], references: [id])
+
+  invitedByUserId String
+  invitedBy       User            @relation("InvitationInviter", fields: [invitedByUserId], references: [id])
+
+  tokenHash      String           @unique
+  status         InvitationStatus @default(PENDING)
+
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime         @default(now())
+
+  @@index([organizationId])
+  @@index([email])
+  @@map("invitations")
+}
+
+// ============================================================================
+// PHASE 9 — SESSION MANAGEMENT
+// ============================================================================
+
+/// A user-visible "device session", one per refresh-token family, so users
+/// can see and revoke "Chrome on MacBook", "Safari on iPhone", etc.
+model Session {
+  id             String        @id @default(uuid())
+
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  refreshTokenId String?       @unique
+  refreshToken   RefreshToken? @relation(fields: [refreshTokenId], references: [id], onDelete: SetNull)
+
+  userAgent      String?
+  ipAddress      String?
+  deviceLabel    String?
+
+  lastActiveAt   DateTime      @default(now())
+  revokedAt      DateTime?
+  createdAt      DateTime      @default(now())
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+// ============================================================================
+// PHASE 10 — AUDIT LOGS
+// ============================================================================
+
+/// Immutable, append-only record of security- and business-relevant events.
+/// Never update or delete rows here in application code.
+model AuditLog {
+  id             String        @id @default(uuid())
+
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  actorUserId    String?
+  actor          User?         @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  action         String // e.g. "member.invited", "role.updated"
+  targetType     String? // e.g. "Membership", "Role"
+  targetId       String?
+
+  metadata       Json? // free-form structured detail about the event
+  ipAddress      String?
+  userAgent      String?
+  requestId      String? // ties this event to Phase 15 request tracing
+
+  createdAt      DateTime      @default(now())
+
+  @@index([organizationId])
+  @@index([actorUserId])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+// ============================================================================
+// PHASE 12 — API KEYS
+// ============================================================================
+
+/// Machine-to-machine credential scoped to an organization with a fixed set
+/// of permission scopes. Only a hash + short prefix are stored; the full key
+/// is shown to the user exactly once at creation time.
+model ApiKey {
+  id             String       @id @default(uuid())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name           String
+  keyPrefix      String // short, non-secret identifier shown in UI, e.g. "eak_ab12"
+  keyHash        String       @unique
+  scopes         String[] // e.g. ["members:read", "invitations:create"]
+
+  createdByUserId String
+  createdBy       User        @relation("ApiKeyCreator", fields: [createdByUserId], references: [id])
+
+  lastUsedAt     DateTime?
+  expiresAt      DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId])
+  @@map("api_keys")
+}

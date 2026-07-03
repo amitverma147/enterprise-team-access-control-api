@@ -1,0 +1,43 @@
+# ============================================================================
+# Local development infrastructure (Phase 21 — Docker)
+# ----------------------------------------------------------------------------
+# Run: docker compose up -d
+# This brings up Postgres + Redis only. The NestJS app itself runs on the
+# host with `npm run start:dev` for fast reload during development.
+# ============================================================================
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: eacapi-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: eacapi
+      POSTGRES_PASSWORD: eacapi_dev_password
+      POSTGRES_DB: eacapi
+    ports:
+      - '5432:5432'
+    volumes:
+      - eacapi_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U eacapi']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: eacapi-redis
+    restart: unless-stopped
+    ports:
+      - '6380:6379'
+    volumes:
+      - eacapi_redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  eacapi_postgres_data:
+  eacapi_redis_data:
