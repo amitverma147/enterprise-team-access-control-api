@@ -11,9 +11,9 @@ Legend: ✅ Implemented on this branch · 🧱 Schema ready, module not built ye
 |------:|-----------------------------|:------:|-------|
 | 1     | Authentication              | ✅ | Register, login, JWT access tokens, rotating refresh tokens with theft detection, account lockout, email verification (stubbed email delivery). |
 | 2     | Organizations                | ✅ | Create/list/read/update/soft-delete organizations. Authorization is ownership-only (`organization.ownerId`). |
-| 3     | Memberships                   | ✅ | You are here. Org creation now also creates the owner's `ACTIVE` membership (transactional). Owner can list/add(by email)/suspend/remove members. Still ownership-only authorization. |
-| 4     | Roles                         | ⏳ | Next branch: `phase-4`. |
-| 5     | Permission Engine             | ⏳ | |
+| 3     | Memberships                   | ✅ | Org creation now also creates the owner's `ACTIVE` membership (transactional). Owner can list/add(by email)/suspend/remove members. Still ownership-only authorization. |
+| 4     | Roles                         | ✅ | You are here. Seeded system roles (OWNER/ADMIN/MEMBER) + full permission catalog. Custom role CRUD and role assignment on memberships. Roles exist and are assignable, but nothing enforces them yet — authorization is still ownership-only. |
+| 5     | Permission Engine             | ⏳ | Next branch: `phase-5`. |
 | 6     | Permission Caching            | ⏳ | |
 | 7     | Resource Authorization         | ⏳ | |
 | 8     | Invitations                    | ⏳ | |
@@ -43,14 +43,20 @@ read/write** — not the schema itself. Tables like `Organization`, `Role`, or
 `ApiKey` already exist in the database on this branch, but no code uses them
 yet.
 
-## What's next: Phase 4 — Roles
+## What's next: Phase 5 — Permission Engine
 
-- `Role`, `Permission`, `RolePermission`, and `MembershipRole` models already
-  exist in the schema.
-- Seed script (`prisma/seed.ts`) introduces the permission catalog and
-  built-in system roles (OWNER, ADMIN, MEMBER).
-- `RolesModule` adds CRUD for organization-specific custom roles, and
-  endpoints to assign/unassign a role on a membership.
-- Authorization for role management is **still ownership-only** (only the
-  org owner can manage roles) — Phase 5 is what actually makes roles affect
-  *authorization decisions* elsewhere in the API.
+This is the big refactor phase. `PermissionsModule` is introduced with:
+- `PermissionsService.resolveMembership(userId, organizationId)` — resolves
+  a membership's status + the union of every permission granted by every
+  role attached to it (straight from the database; caching is Phase 6).
+- `PermissionsGuard`, registered globally — for any route with an
+  `:organizationId` param, confirms ACTIVE membership and
+  (`@RequirePermissions(...)`) specific permissions.
+- `OrganizationsService`, `MembershipsService`, and `RolesService` all drop
+  their `assertOwner(...)` calls in favor of `@RequirePermissions(...)` on
+  the controllers — e.g. updating an org now requires the `org:update`
+  permission (granted to OWNER and ADMIN), not literal ownership. This means
+  an ADMIN can finally do admin things without being the literal owner.
+
+Run `npm run prisma:seed` before trying this branch if you haven't already
+— the permission engine depends on the system roles it creates.

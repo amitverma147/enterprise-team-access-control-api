@@ -1,6 +1,6 @@
-# Project Structure — File-by-File Guide (Phase 3)
+# Project Structure — File-by-File Guide (Phase 4)
 
-This document is accurate to **this branch only** (`phase-3`) — it lists the
+This document is accurate to **this branch only** (`phase-4`) — it lists the
 files that actually exist right now. Each phase branch updates this file to
 add the new files introduced by that phase. For the eventual full structure,
 see [`ARCHITECTURE_MINDMAP.md`](./ARCHITECTURE_MINDMAP.md) (target design).
@@ -42,6 +42,11 @@ mindmap
         memberships.module.ts
         memberships.controller.ts
         memberships.service.ts
+        dto
+      roles
+        roles.module.ts
+        roles.controller.ts
+        roles.service.ts
         dto
 ```
 
@@ -105,10 +110,22 @@ Augments Express's `Request.user` type (via `Express.User`) so
 - `memberships.controller.ts` — nested under `/organizations/:organizationId/members`.
 - `dto/` — `AddMemberDto` (add an existing user by email), `UpdateMembershipDto`.
 
+### `src/modules/roles/` — Phase 4 (Roles)
+- `roles.service.ts` — list system + custom roles, create/update/delete
+  custom roles, assign/unassign a role on a membership. Ownership-authorized
+  for now (see the file's header comment).
+- `roles.controller.ts` — nested under `/organizations/:organizationId`.
+- `dto/` — `CreateRoleDto`, `UpdateRoleDto`.
+
+### `prisma/seed.ts`
+Seeds the permission catalog and the three built-in system roles (OWNER,
+ADMIN, MEMBER). Run with `npm run prisma:seed`.
+
 ### `prisma/schema.prisma`
 The full data model for all 22 phases (see [`DATABASE.md`](./DATABASE.md)) —
-only `User`, `RefreshToken`, `EmailVerificationToken`, `Organization`, and
-`Membership` are used by application code on this branch.
+`User`, `RefreshToken`, `EmailVerificationToken`, `Organization`,
+`Membership`, `Role`, `Permission`, `RolePermission`, and `MembershipRole`
+are all used by application code on this branch.
 
 ---
 

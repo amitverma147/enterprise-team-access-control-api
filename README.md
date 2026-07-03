@@ -5,7 +5,7 @@ and secure API design — built **phase by phase**, each phase on its own git
 branch (`phase-1`, `phase-2`, ... `phase-22`), so you can check out any
 branch and run a fully working, testable slice of the system.
 
-> **You are on: `phase-3` — Memberships.**
+> **You are on: `phase-4` — Roles.**
 > New here? Start with [`docs/SYSTEM_DESIGN.md`](./docs/SYSTEM_DESIGN.md) for
 > the target architecture, [`docs/ARCHITECTURE_MINDMAP.md`](./docs/ARCHITECTURE_MINDMAP.md)
 > for a visual map, and [`docs/ROADMAP.md`](./docs/ROADMAP.md) for exactly
@@ -19,7 +19,7 @@ branch and run a fully working, testable slice of the system.
 - **Argon2id** — password hashing
 - **Docker Compose** — local Postgres (+ Redis, added from Phase 6)
 
-## What's built on this branch (Phases 1–3)
+## What's built on this branch (Phases 1–4)
 
 **Phase 1 — Authentication**
 - `POST /auth/register` — create an account (Argon2id password hashing),
@@ -55,7 +55,19 @@ branch and run a fully working, testable slice of the system.
 - `DELETE .../members/:membershipId` — remove a member (owner only; the
   owner cannot remove themself).
 
-See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's coming in `phase-4`
+**Phase 4 — Roles**
+- `npm run prisma:seed` seeds the full permission catalog and three built-in
+  system roles: `OWNER`, `ADMIN`, `MEMBER`.
+- `GET/POST/PATCH/DELETE /organizations/:organizationId/roles` — CRUD for
+  organization-specific custom roles (owner only). System roles cannot be
+  modified/deleted via the API.
+- `POST/DELETE .../members/:membershipId/roles/:roleId` — assign/unassign a
+  role on a membership (owner only).
+- **Roles don't affect authorization yet** — that's the entire point of
+  Phase 5. This branch proves the data model works before wiring it into
+  guards.
+
+See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's coming in `phase-5`
 onward — each subsequent branch adds one phase without breaking earlier ones.
 
 ## Getting started
@@ -82,6 +94,7 @@ npm run docker:up      # starts Postgres (5432)
 ### 5. Set up the database
 ```bash
 npm run prisma:migrate
+npm run prisma:seed      # seeds system roles + permission catalog
 ```
 
 ### 6. Run the app
@@ -131,8 +144,8 @@ belongs to.
 |---|---|
 | `phase-1` | Authentication |
 | `phase-2` | Organizations |
-| `phase-3` (this branch) | Memberships |
-| `phase-4` | Roles |
+| `phase-3` | Memberships |
+| `phase-4` (this branch) | Roles |
 | `phase-5` | Permission Engine |
 | `phase-6` | Permission Caching (Redis) |
 | `phase-7` → `phase-22` | See [`docs/ROADMAP.md`](./docs/ROADMAP.md) |
@@ -149,6 +162,7 @@ src/
     auth/             # Phase 1
     organizations/    # Phase 2
     memberships/      # Phase 3
+    roles/            # Phase 4
 docs/                 # architecture, database, roadmap, mind maps
 docker-compose.yml    # local Postgres (+ Redis from Phase 6)
 ```
