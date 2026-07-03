@@ -5,7 +5,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { OrganizationsService } from '../organizations/organizations.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 
@@ -16,31 +15,26 @@ import { UpdateRoleDto } from './dto/update-role.dto';
  * seeded in prisma/seed.ts, `organizationId = null`) plus organization-
  * specific custom roles, and assigning/removing roles on a Membership.
  *
- * PHASE 4 STATE — ROLES EXIST, BUT DON'T DO ANYTHING YET
+ * PHASE 5 UPDATE — OWNERSHIP CHECKS REMOVED, ROLES NOW MATTER
  * ----------------------------------------------------------------------------
- * This is an important, deliberate milestone: after this phase, you can
- * create custom roles and assign them to members, and the data model fully
- * supports many-to-many Membership <-> Role <-> Permission relationships —
- * but nothing in the API actually *checks* those permissions yet.
- * Authorization for managing roles is still ownership-only, same as
- * Phases 2–3. Phase 5 (Permission Engine) is what makes roles/permissions
- * actually affect what a request is allowed to do — read that phase's
- * `PermissionsService` to see the payoff of the data model built here.
+ * Compare to Phase 4: every method dropped its `requestingUserId` param —
+ * authorization is now `@RequirePermissions('roles:read' | 'roles:manage' |
+ * 'roles:assign')` on the controller. This is the phase where role
+ * management itself becomes subject to the very permission system it
+ * configures: managing roles requires the `roles:manage` permission, which
+ * (per the seed data) only OWNER and ADMIN hold.
+ *
+ * System roles are read-only from the API's perspective — they exist so
+ * every organization has a sane baseline without having to configure
+ * anything. Organizations may layer custom roles on top for finer-grained
+ * access (e.g. "Billing Viewer", "Support Agent").
  */
 @Injectable()
 export class RolesService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly organizationsService: OrganizationsService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /** System roles (available to every org) + this org's custom roles. */
-  async findAll(organizationId: string, requestingUserId: string) {
-    await this.organizationsService.assertOwner(
-      organizationId,
-      requestingUserId,
-    );
-
+  async findAll(organizationId: string) {
     return this.prisma.role.findMany({
       where: { OR: [{ organizationId: null }, { organizationId }] },
       include: { permissions: { include: { permission: true } } },
@@ -48,16 +42,7 @@ export class RolesService {
     });
   }
 
-  async create(
-    organizationId: string,
-    requestingUserId: string,
-    dto: CreateRoleDto,
-  ) {
-    await this.organizationsService.assertOwner(
-      organizationId,
-      requestingUserId,
-    );
-
+  async create(organizationId: string, dto: CreateRoleDto) {
     const existing = await this.prisma.role.findFirst({
       where: { organizationId, name: dto.name },
     });
@@ -82,16 +67,7 @@ export class RolesService {
     });
   }
 
-  async update(
-    organizationId: string,
-    requestingUserId: string,
-    roleId: string,
-    dto: UpdateRoleDto,
-  ) {
-    await this.organizationsService.assertOwner(
-      organizationId,
-      requestingUserId,
-    );
+  async update(organizationId: string, roleId: string, dto: UpdateRoleDto) {
     const role = await this.getCustomRoleOrThrow(organizationId, roleId);
 
     if (dto.permissionKeys) {
@@ -111,29 +87,16 @@ export class RolesService {
     });
   }
 
-  async remove(
-    organizationId: string,
-    requestingUserId: string,
-    roleId: string,
-  ) {
-    await this.organizationsService.assertOwner(
-      organizationId,
-      requestingUserId,
-    );
+  async remove(organizationId: string, roleId: string) {
     await this.getCustomRoleOrThrow(organizationId, roleId);
     await this.prisma.role.delete({ where: { id: roleId } });
   }
 
   async assignToMembership(
     organizationId: string,
-    requestingUserId: string,
     membershipId: string,
     roleId: string,
   ) {
-    await this.organizationsService.assertOwner(
-      organizationId,
-      requestingUserId,
-    );
     await this.getMembershipOrThrow(organizationId, membershipId);
     await this.getAssignableRoleOrThrow(organizationId, roleId);
 
@@ -146,16 +109,10 @@ export class RolesService {
 
   async removeFromMembership(
     organizationId: string,
-    requestingUserId: string,
     membershipId: string,
     roleId: string,
   ) {
-    await this.organizationsService.assertOwner(
-      organizationId,
-      requestingUserId,
-    );
     await this.getMembershipOrThrow(organizationId, membershipId);
-
     await this.prisma.membershipRole.deleteMany({
       where: { membershipId, roleId },
     });

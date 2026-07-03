@@ -12,9 +12,9 @@ Legend: ✅ Implemented on this branch · 🧱 Schema ready, module not built ye
 | 1     | Authentication              | ✅ | Register, login, JWT access tokens, rotating refresh tokens with theft detection, account lockout, email verification (stubbed email delivery). |
 | 2     | Organizations                | ✅ | Create/list/read/update/soft-delete organizations. Authorization is ownership-only (`organization.ownerId`). |
 | 3     | Memberships                   | ✅ | Org creation now also creates the owner's `ACTIVE` membership (transactional). Owner can list/add(by email)/suspend/remove members. Still ownership-only authorization. |
-| 4     | Roles                         | ✅ | You are here. Seeded system roles (OWNER/ADMIN/MEMBER) + full permission catalog. Custom role CRUD and role assignment on memberships. Roles exist and are assignable, but nothing enforces them yet — authorization is still ownership-only. |
-| 5     | Permission Engine             | ⏳ | Next branch: `phase-5`. |
-| 6     | Permission Caching            | ⏳ | |
+| 4     | Roles                         | ✅ | Seeded system roles (OWNER/ADMIN/MEMBER) + full permission catalog. Custom role CRUD and role assignment on memberships. |
+| 5     | Permission Engine             | ✅ | You are here. Global `PermissionsGuard` + `@RequirePermissions(...)`. Organizations/Memberships/Roles fully switched from ownership checks to permission checks. New members get the system MEMBER role by default. |
+| 6     | Permission Caching            | ⏳ | Next branch: `phase-6`. |
 | 7     | Resource Authorization         | ⏳ | |
 | 8     | Invitations                    | ⏳ | |
 | 9     | Session Management              | ⏳ | |
@@ -43,20 +43,18 @@ read/write** — not the schema itself. Tables like `Organization`, `Role`, or
 `ApiKey` already exist in the database on this branch, but no code uses them
 yet.
 
-## What's next: Phase 5 — Permission Engine
+## What's next: Phase 6 — Permission Caching
 
-This is the big refactor phase. `PermissionsModule` is introduced with:
-- `PermissionsService.resolveMembership(userId, organizationId)` — resolves
-  a membership's status + the union of every permission granted by every
-  role attached to it (straight from the database; caching is Phase 6).
-- `PermissionsGuard`, registered globally — for any route with an
-  `:organizationId` param, confirms ACTIVE membership and
-  (`@RequirePermissions(...)`) specific permissions.
-- `OrganizationsService`, `MembershipsService`, and `RolesService` all drop
-  their `assertOwner(...)` calls in favor of `@RequirePermissions(...)` on
-  the controllers — e.g. updating an org now requires the `org:update`
-  permission (granted to OWNER and ADMIN), not literal ownership. This means
-  an ADMIN can finally do admin things without being the literal owner.
+- Add `RedisModule`/`RedisService` (ioredis) back to the app (last used in
+  the schema-design phase, not by any code until now).
+- `PermissionsService.resolveMembership(...)` gains a Redis-backed cache in
+  front of the database lookup (same TTL-based read, 5 minutes), because
+  permission checks now happen on nearly every request.
+- Every mutation that could change a membership's effective permissions
+  (membership status change, role assignment/unassignment, a role's
+  permission set changing) explicitly invalidates the affected cache
+  entries — watch `MembershipsService` and `RolesService` gain
+  `PermissionsService` as a dependency again in that branch.
 
 Run `npm run prisma:seed` before trying this branch if you haven't already
 — the permission engine depends on the system roles it creates.

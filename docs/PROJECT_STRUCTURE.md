@@ -1,6 +1,6 @@
-# Project Structure — File-by-File Guide (Phase 4)
+# Project Structure — File-by-File Guide (Phase 5)
 
-This document is accurate to **this branch only** (`phase-4`) — it lists the
+This document is accurate to **this branch only** (`phase-5`) — it lists the
 files that actually exist right now. Each phase branch updates this file to
 add the new files introduced by that phase. For the eventual full structure,
 see [`ARCHITECTURE_MINDMAP.md`](./ARCHITECTURE_MINDMAP.md) (target design).
@@ -20,9 +20,11 @@ mindmap
         prisma.service.ts
       guards
         jwt-auth.guard.ts
+        permissions.guard.ts
       decorators
         public.decorator.ts
         current-user.decorator.ts
+        current-membership.decorator.ts
       types
         express.d.ts
     modules
@@ -48,6 +50,10 @@ mindmap
         roles.controller.ts
         roles.service.ts
         dto
+      permissions
+        permissions.module.ts
+        permissions.service.ts
+        decorators/require-permissions.decorator.ts
 ```
 
 ## Directory-by-directory explanation
@@ -72,14 +78,19 @@ Everything reads config through `ConfigService.get(...)` instead of touching
 - `prisma.module.ts` — makes `PrismaService` available everywhere via
   `@Global()`.
 
-### `src/common/guards/jwt-auth.guard.ts`
-Validates the access token on every request unless the route is
-`@Public()`. "Secure by default."
+### `src/common/guards/`
+- `jwt-auth.guard.ts` — validates the access token on every request unless
+  the route is `@Public()`. "Secure by default."
+- `permissions.guard.ts` — for any route with an `:organizationId` param,
+  confirms active membership and (`@RequirePermissions(...)`) specific
+  permissions. Attaches `request.membership` for downstream use.
 
 ### `src/common/decorators/`
 - `public.decorator.ts` — opts a route out of the global `JwtAuthGuard`.
 - `current-user.decorator.ts` — pulls the authenticated user (`sub`, `email`)
   off `request.user`.
+- `current-membership.decorator.ts` — pulls the resolved membership +
+  permission list off `request.membership`, set by `PermissionsGuard`.
 
 ### `src/common/types/express.d.ts`
 Augments Express's `Request.user` type (via `Express.User`) so
@@ -112,20 +123,26 @@ Augments Express's `Request.user` type (via `Express.User`) so
 
 ### `src/modules/roles/` — Phase 4 (Roles)
 - `roles.service.ts` — list system + custom roles, create/update/delete
-  custom roles, assign/unassign a role on a membership. Ownership-authorized
-  for now (see the file's header comment).
-- `roles.controller.ts` — nested under `/organizations/:organizationId`.
+  custom roles, assign/unassign a role on a membership.
+- `roles.controller.ts` — nested under `/organizations/:organizationId`,
+  authorized via `@RequirePermissions('roles:read' | 'roles:manage' | 'roles:assign')`.
 - `dto/` — `CreateRoleDto`, `UpdateRoleDto`.
+
+### `src/modules/permissions/` — Phase 5 (Permission Engine)
+- `permissions.service.ts` — resolves a membership's status + effective
+  permission set (union across all assigned roles), straight from the
+  database (caching arrives in Phase 6).
+- `decorators/require-permissions.decorator.ts` — declares which
+  permissions a route requires; read by `PermissionsGuard`.
 
 ### `prisma/seed.ts`
 Seeds the permission catalog and the three built-in system roles (OWNER,
 ADMIN, MEMBER). Run with `npm run prisma:seed`.
 
 ### `prisma/schema.prisma`
-The full data model for all 22 phases (see [`DATABASE.md`](./DATABASE.md)) —
-`User`, `RefreshToken`, `EmailVerificationToken`, `Organization`,
-`Membership`, `Role`, `Permission`, `RolePermission`, and `MembershipRole`
-are all used by application code on this branch.
+The full data model for all 22 phases (see [`DATABASE.md`](./DATABASE.md)).
+At this phase, every table except `PasswordResetToken`, `PasswordHistoryEntry`,
+`Invitation`, `Session`, `AuditLog`, and `ApiKey` is in active use.
 
 ---
 

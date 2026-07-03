@@ -5,7 +5,7 @@ and secure API design — built **phase by phase**, each phase on its own git
 branch (`phase-1`, `phase-2`, ... `phase-22`), so you can check out any
 branch and run a fully working, testable slice of the system.
 
-> **You are on: `phase-4` — Roles.**
+> **You are on: `phase-5` — Permission Engine.**
 > New here? Start with [`docs/SYSTEM_DESIGN.md`](./docs/SYSTEM_DESIGN.md) for
 > the target architecture, [`docs/ARCHITECTURE_MINDMAP.md`](./docs/ARCHITECTURE_MINDMAP.md)
 > for a visual map, and [`docs/ROADMAP.md`](./docs/ROADMAP.md) for exactly
@@ -19,7 +19,7 @@ branch and run a fully working, testable slice of the system.
 - **Argon2id** — password hashing
 - **Docker Compose** — local Postgres (+ Redis, added from Phase 6)
 
-## What's built on this branch (Phases 1–4)
+## What's built on this branch (Phases 1–5)
 
 **Phase 1 — Authentication**
 - `POST /auth/register` — create an account (Argon2id password hashing),
@@ -63,11 +63,27 @@ branch and run a fully working, testable slice of the system.
   modified/deleted via the API.
 - `POST/DELETE .../members/:membershipId/roles/:roleId` — assign/unassign a
   role on a membership (owner only).
-- **Roles don't affect authorization yet** — that's the entire point of
-  Phase 5. This branch proves the data model works before wiring it into
-  guards.
+- Roles are assignable and the data model works, but nothing enforces them
+  yet — that's this phase's job.
 
-See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's coming in `phase-5`
+**Phase 5 — Permission Engine**
+- `PermissionsGuard`, registered globally: for any route with an
+  `:organizationId` param, confirms the caller has an **ACTIVE** membership,
+  and (where `@RequirePermissions(...)` is present) the specific
+  permission(s) required.
+- `Organizations`, `Memberships`, and `Roles` controllers/services **no
+  longer use ownership checks** — compare this branch's `organizations.service.ts`
+  to `phase-4`'s to see the simplification. Authorization is now entirely
+  data-driven: an ADMIN can do admin things without being the literal
+  `ownerId`.
+- Creating an organization now assigns the creator the system `OWNER` role;
+  adding a member now assigns them the system `MEMBER` role by default.
+- Try it: register two users, have one create an org and add the other as a
+  member, then confirm the member can list members (`members:read`) but
+  cannot create custom roles or delete the org (`roles:manage` /
+  `org:delete` are ADMIN/OWNER-only).
+
+See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's coming in `phase-6`
 onward — each subsequent branch adds one phase without breaking earlier ones.
 
 ## Getting started
@@ -145,8 +161,8 @@ belongs to.
 | `phase-1` | Authentication |
 | `phase-2` | Organizations |
 | `phase-3` | Memberships |
-| `phase-4` (this branch) | Roles |
-| `phase-5` | Permission Engine |
+| `phase-4` | Roles |
+| `phase-5` (this branch) | Permission Engine |
 | `phase-6` | Permission Caching (Redis) |
 | `phase-7` → `phase-22` | See [`docs/ROADMAP.md`](./docs/ROADMAP.md) |
 
@@ -163,6 +179,7 @@ src/
     organizations/    # Phase 2
     memberships/      # Phase 3
     roles/            # Phase 4
+    permissions/      # Phase 5
 docs/                 # architecture, database, roadmap, mind maps
 docker-compose.yml    # local Postgres (+ Redis from Phase 6)
 ```

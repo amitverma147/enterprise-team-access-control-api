@@ -5,7 +5,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { OrganizationsService } from '../organizations/organizations.service';
 import { AddMemberDto } from './dto/add-member.dto';
 import { UpdateMembershipDto } from './dto/update-membership.dto';
 
@@ -14,46 +13,35 @@ import { UpdateMembershipDto } from './dto/update-membership.dto';
  * ----------------------------------------------------------------------------
  * Implements Phase 3 (Memberships): the lifecycle of a user's belonging to
  * an organization (ACTIVE, SUSPENDED, REMOVED) — independent from what
- * ROLES that membership holds (Roles don't exist until Phase 4).
+ * ROLES that membership holds (Phase 4/5, see RolesService).
  *
- * AUTHORIZATION: STILL OWNERSHIP-ONLY
+ * PHASE 5 UPDATE — OWNERSHIP CHECKS REMOVED FROM HERE
  * ----------------------------------------------------------------------------
- * Every method here calls `organizationsService.assertOwner(...)` first —
- * only the organization's owner can view/add/change/remove members at this
- * phase. This is a real limitation (an ADMIN-type member couldn't manage
- * members yet even if that made sense) that Phase 4 (Roles) and Phase 5
- * (Permission Engine) exist specifically to remove.
+ * Compare to Phase 3/4: every method dropped its `requestingUserId` param
+ * and the `organizationsService.assertOwner(...)` call. Authorization is now
+ * `@RequirePermissions(...)` on the controller (`members:read`,
+ * `members:invite`, `members:suspend`, `members:remove`), enforced by the
+ * global `PermissionsGuard` before these methods ever run. This is the
+ * concrete payoff of Phase 4/5: an ADMIN — not just the literal owner — can
+ * now manage members, because ADMIN's seeded permission set includes these
+ * `members:*` keys.
  */
 @Injectable()
 export class MembershipsService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly organizationsService: OrganizationsService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(organizationId: string, requestingUserId: string) {
-    await this.organizationsService.assertOwner(
-      organizationId,
-      requestingUserId,
-    );
-
+  async findAll(organizationId: string) {
     return this.prisma.membership.findMany({
       where: { organizationId },
-      include: { user: { select: { id: true, email: true, fullName: true } } },
+      include: {
+        user: { select: { id: true, email: true, fullName: true } },
+        roles: { include: { role: true } },
+      },
       orderBy: { createdAt: 'asc' },
     });
   }
 
-  async addMember(
-    organizationId: string,
-    requestingUserId: string,
-    dto: AddMemberDto,
-  ) {
-    await this.organizationsService.assertOwner(
-      organizationId,
-      requestingUserId,
-    );
-
+  async addMember(organizationId: string, dto: AddMemberDto) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase() },
     });
@@ -72,49 +60,60 @@ export class MembershipsService {
       );
     }
 
-    return this.prisma.membership.create({
-      data: { userId: user.id, organizationId, status: 'ACTIVE' },
-      include: { user: { select: { id: true, email: true, fullName: true } } },
+    // New members get the baseline system MEMBER role by default -- without
+    // this, an ACTIVE membership with zero roles would resolve to zero
+    // permissions and be unable to do anything at all (see PermissionsGuard,
+    // Phase 5). The org owner can grant additional roles afterward via
+    // RolesService.assignToMembership.
+    const memberRole = await this.prisma.role.findFirst({
+      where: { organizationId: null, name: 'MEMBER' },
+    });
+
+    return this.prisma.$transaction(async (tx) => {
+      const membership = await tx.membership.create({
+        data: { userId: user.id, organizationId, status: 'ACTIVE' },
+        include: {
+          user: { select: { id: true, email: true, fullName: true } },
+        },
+      });
+
+      if (memberRole) {
+        await tx.membershipRole.create({
+          data: { membershipId: membership.id, roleId: memberRole.id },
+        });
+      }
+
+      return membership;
     });
   }
 
   async updateStatus(
     organizationId: string,
-    requestingUserId: string,
     membershipId: string,
     dto: UpdateMembershipDto,
   ) {
-    await this.organizationsService.assertOwner(
-      organizationId,
-      requestingUserId,
-    );
-    await this.getWithinOrg(organizationId, membershipId);
-
+    const membership = await this.getWithinOrg(organizationId, membershipId);
     return this.prisma.membership.update({
-      where: { id: membershipId },
+      where: { id: membership.id },
       data: { status: dto.status },
     });
   }
 
-  async remove(
-    organizationId: string,
-    requestingUserId: string,
-    membershipId: string,
-  ) {
-    const organization = await this.organizationsService.assertOwner(
-      organizationId,
-      requestingUserId,
-    );
+  async remove(organizationId: string, membershipId: string) {
     const membership = await this.getWithinOrg(organizationId, membershipId);
 
-    if (membership.userId === organization.ownerId) {
+    const organization = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { ownerId: true },
+    });
+    if (organization?.ownerId === membership.userId) {
       throw new BadRequestException(
         'The organization owner cannot be removed from their own organization',
       );
     }
 
     await this.prisma.membership.update({
-      where: { id: membershipId },
+      where: { id: membership.id },
       data: { status: 'REMOVED' },
     });
   }
