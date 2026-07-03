@@ -46,6 +46,7 @@ export interface AppConfig {
   tokens: {
     emailVerificationTtlHours: number;
     passwordResetTtlMinutes: number;
+    invitationTtlDays: number;
   };
   throttle: {
     ttlSeconds: number;
@@ -90,6 +91,10 @@ export default (): AppConfig => ({
     ),
     passwordResetTtlMinutes: parseInt(
       process.env.PASSWORD_RESET_TOKEN_TTL_MINUTES ?? '30',
+      10,
+    ),
+    invitationTtlDays: parseInt(
+      process.env.INVITATION_TOKEN_TTL_DAYS ?? '7',
       10,
     ),
   },

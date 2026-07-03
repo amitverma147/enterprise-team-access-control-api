@@ -15,9 +15,9 @@ Legend: ✅ Implemented on this branch · 🧱 Schema ready, module not built ye
 | 4     | Roles                         | ✅ | Seeded system roles (OWNER/ADMIN/MEMBER) + full permission catalog. Custom role CRUD and role assignment on memberships. |
 | 5     | Permission Engine             | ✅ | Global `PermissionsGuard` + `@RequirePermissions(...)`. Organizations/Memberships/Roles fully switched from ownership checks to permission checks. New members get the system MEMBER role by default. |
 | 6     | Permission Caching            | ✅ | `PermissionsService.resolveMembership()` is Redis-cached (5 min TTL) with explicit invalidation on every write that could change a membership's effective permissions. |
-| 7     | Resource Authorization         | ✅ | You are here. Ownership rules that a generic permission can't express: the org owner cannot be suspended/removed, and their OWNER role assignment cannot be stripped — even by an ADMIN with the matching permission. Automated e2e tests (`test/tenant-isolation.e2e-spec.ts`) cover cross-tenant isolation + these rules. |
-| 8     | Invitations                    | ⏳ | Next branch: `phase-8`. |
-| 9     | Session Management              | ⏳ | |
+| 7     | Resource Authorization         | ✅ | Ownership rules that a generic permission can't express: the org owner cannot be suspended/removed, and their OWNER role assignment cannot be stripped — even by an ADMIN with the matching permission. Automated e2e tests (`test/tenant-isolation.e2e-spec.ts`) cover cross-tenant isolation + these rules. |
+| 8     | Invitations                    | ✅ | You are here. One-time hashed tokens (same pattern as email verification/refresh tokens), works for people without an account yet, email-match enforced on accept, auto-expiry. |
+| 9     | Session Management              | ⏳ | Next branch: `phase-9`. |
 | 10    | Audit Logs                      | ⏳ | |
 | 11    | Security                        | 🧱 | Baseline only: `helmet()`, global `ValidationPipe`, a basic global rate limit. Full phase adds per-route limits and more hardening. |
 | 12    | API Keys                        | ⏳ | |
@@ -43,18 +43,15 @@ read/write** — not the schema itself. Tables like `Organization`, `Role`, or
 `ApiKey` already exist in the database on this branch, but no code uses them
 yet.
 
-## What's next: Phase 8 — Invitations
+## What's next: Phase 9 — Session Management
 
-- `Invitation` model already exists in the schema (organizationId, email,
-  roleId, hashed one-time token, status, expiry).
-- `InvitationsModule` adds `POST /organizations/:organizationId/invitations`
-  (create + email a one-time token, `members:invite` permission) and
-  `POST /invitations/accept` (public endpoint, consumes the token and
-  creates a Membership + assigns the invited role — works even for people
-  who don't have an account yet, unlike Phase 3's `addMember`).
-- Reuses `HashingService.generateOpaqueToken()` / `hashOpaqueToken()` from
-  Phase 1 — the exact same token pattern as refresh tokens and email
-  verification, just a different table.
+- `Session` rows already exist (created/rotated by `AuthService` since
+  Phase 1) but there's no way for a user to see or revoke them yet.
+- `SessionsModule` adds `GET /auth/sessions` (list the caller's own
+  sessions: device/IP metadata, last active time) and
+  `DELETE /auth/sessions/:sessionId` (revoke a session, which also revokes
+  its underlying refresh token — the next `/auth/refresh` with that token
+  fails immediately).
 
 Run `npm run prisma:seed` before trying this branch if you haven't already
 — the permission engine depends on the system roles it creates. Also run

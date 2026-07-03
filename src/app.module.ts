@@ -14,15 +14,16 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
 import { MembershipsModule } from './modules/memberships/memberships.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
+import { InvitationsModule } from './modules/invitations/invitations.module';
 
 /**
  * FILE PURPOSE
  * ----------------------------------------------------------------------------
  * Application composition root.
  *
- * PHASE 6 STATE: Authentication + Organizations + Memberships + Roles +
- * Permission Engine (now Redis-cached) are wired up. Global guards run, in
- * order, on every request:
+ * PHASE 8 STATE: Authentication + Organizations + Memberships + Roles +
+ * Permission Engine (Redis-cached) + Invitations are wired up. Global
+ * guards run, in order, on every request:
  *   JwtAuthGuard      -> is there a valid access token? (unless @Public())
  *   PermissionsGuard  -> for routes with :organizationId, is the caller an
  *                        ACTIVE member with the required permission(s)?
@@ -58,6 +59,7 @@ import { PermissionsModule } from './modules/permissions/permissions.module';
     MembershipsModule,
     RolesModule,
     PermissionsModule,
+    InvitationsModule,
   ],
   controllers: [AppController],
   providers: [

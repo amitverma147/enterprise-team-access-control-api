@@ -1,6 +1,6 @@
-# Project Structure — File-by-File Guide (Phase 7)
+# Project Structure — File-by-File Guide (Phase 8)
 
-This document is accurate to **this branch only** (`phase-7`) — it lists the
+This document is accurate to **this branch only** (`phase-8`) — it lists the
 files that actually exist right now. Each phase branch updates this file to
 add the new files introduced by that phase. For the eventual full structure,
 see [`ARCHITECTURE_MINDMAP.md`](./ARCHITECTURE_MINDMAP.md) (target design).
@@ -146,6 +146,14 @@ Augments Express's `Request.user` type (via `Express.User`) so
 ### `prisma/seed.ts`
 Seeds the permission catalog and the three built-in system roles (OWNER,
 ADMIN, MEMBER). Run with `npm run prisma:seed`.
+
+### `src/modules/invitations/` — Phase 8 (Invitations)
+- `invitations.service.ts` — create/list/revoke invitations; `accept()`
+  verifies token hash + expiry + email match, then creates a Membership and
+  assigns the invited role in one transaction.
+- `invitations.controller.ts` — management routes nested under an org
+  (permission-guarded); `accept` is top-level (any authenticated user).
+- `dto/` — `CreateInvitationDto`, `AcceptInvitationDto`.
 
 ### `test/tenant-isolation.e2e-spec.ts` — Phase 7 (Resource Authorization)
 Automated coverage, against the real database, for: cross-tenant 403s, a
