@@ -9,9 +9,9 @@ Legend: ✅ Implemented on this branch · 🧱 Schema ready, module not built ye
 
 | Phase | Name                        | Status | Notes |
 |------:|-----------------------------|:------:|-------|
-| 1     | Authentication              | ✅ | You are here. Register, login, JWT access tokens, rotating refresh tokens with theft detection, account lockout, email verification (stubbed email delivery). |
-| 2     | Organizations                | ⏳ | Next branch: `phase-2`. |
-| 3     | Memberships                   | ⏳ | |
+| 1     | Authentication              | ✅ | Register, login, JWT access tokens, rotating refresh tokens with theft detection, account lockout, email verification (stubbed email delivery). |
+| 2     | Organizations                | ✅ | You are here. Create/list/read/update/soft-delete organizations. Authorization is ownership-only (`organization.ownerId`) — no Membership/Role system yet. |
+| 3     | Memberships                   | ⏳ | Next branch: `phase-3`. |
 | 4     | Roles                         | ⏳ | |
 | 5     | Permission Engine             | ⏳ | |
 | 6     | Permission Caching            | ⏳ | |
@@ -43,12 +43,14 @@ read/write** — not the schema itself. Tables like `Organization`, `Role`, or
 `ApiKey` already exist in the database on this branch, but no code uses them
 yet.
 
-## What's next: Phase 2 — Organizations
+## What's next: Phase 3 — Memberships
 
-- `Organization` model already exists in the schema.
-- Add `OrganizationsModule` with create/list/read/update/soft-delete.
-- Authorization at this stage is **intentionally simple**: only the
-  organization's `ownerId` may update/delete it. There is no membership or
-  role system yet — that's Phases 3–5. This mirrors how you'd actually build
-  this incrementally: ship the tenant boundary first, layer richer
-  authorization on top once more concepts exist.
+- `Membership` model already exists in the schema (User <-> Organization join
+  with a status lifecycle: `INVITED`, `ACTIVE`, `SUSPENDED`, `REMOVED`).
+- Organization creation starts also creating an `ACTIVE` membership row for
+  the owner (wrapped in a transaction with the org creation itself).
+- A simple "add existing user to my org by email" endpoint is added so more
+  than one person can belong to an organization — full invitation-by-email
+  tokens are Phase 8.
+- Authorization remains ownership-based for now (only the org owner can
+  add/remove members) — the real permission engine arrives in Phase 5.

@@ -5,7 +5,7 @@ and secure API design — built **phase by phase**, each phase on its own git
 branch (`phase-1`, `phase-2`, ... `phase-22`), so you can check out any
 branch and run a fully working, testable slice of the system.
 
-> **You are on: `phase-1` — Authentication.**
+> **You are on: `phase-2` — Organizations.**
 > New here? Start with [`docs/SYSTEM_DESIGN.md`](./docs/SYSTEM_DESIGN.md) for
 > the target architecture, [`docs/ARCHITECTURE_MINDMAP.md`](./docs/ARCHITECTURE_MINDMAP.md)
 > for a visual map, and [`docs/ROADMAP.md`](./docs/ROADMAP.md) for exactly
@@ -19,8 +19,9 @@ branch and run a fully working, testable slice of the system.
 - **Argon2id** — password hashing
 - **Docker Compose** — local Postgres (+ Redis, added from Phase 6)
 
-## What's built on this branch (Phase 1 — Authentication)
+## What's built on this branch (Phases 1–2)
 
+**Phase 1 — Authentication**
 - `POST /auth/register` — create an account (Argon2id password hashing),
   auto-issues tokens, and creates a hashed email verification token.
 - `POST /auth/login` — verifies credentials, enforces **account lockout**
@@ -34,8 +35,17 @@ branch and run a fully working, testable slice of the system.
   a basic rate limit, and "secure by default" route protection
   (`JwtAuthGuard` + `@Public()`).
 
-See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's coming in `phase-2`
-onward — each subsequent branch adds one phase without breaking this one.
+**Phase 2 — Organizations**
+- `POST /organizations` — create an organization (you become its owner).
+- `GET /organizations` — list organizations you own.
+- `GET/PATCH/DELETE /organizations/:organizationId` — read/update/soft-delete,
+  restricted to the organization's owner (`ownerId`).
+- Authorization is **intentionally ownership-only** at this phase — there's
+  no Membership/Role system yet (Phases 3–5 add that, and Phase 5 replaces
+  these checks with a real permission engine).
+
+See [`docs/ROADMAP.md`](./docs/ROADMAP.md) for what's coming in `phase-3`
+onward — each subsequent branch adds one phase without breaking earlier ones.
 
 ## Getting started
 
@@ -108,8 +118,8 @@ belongs to.
 
 | Branch | Adds |
 |---|---|
-| `phase-1` (this branch) | Authentication |
-| `phase-2` | Organizations |
+| `phase-1` | Authentication |
+| `phase-2` (this branch) | Organizations |
 | `phase-3` | Memberships |
 | `phase-4` | Roles |
 | `phase-5` | Permission Engine |
@@ -126,6 +136,7 @@ src/
   common/             # cross-cutting: Prisma, guards, decorators, types
   modules/
     auth/             # Phase 1
+    organizations/    # Phase 2
 docs/                 # architecture, database, roadmap, mind maps
 docker-compose.yml    # local Postgres (+ Redis from Phase 6)
 ```
